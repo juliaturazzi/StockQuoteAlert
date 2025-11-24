@@ -28,7 +28,7 @@ public class SmtpEmailService(EmailSettings settings, ILogger<SmtpEmailService> 
                 From = new MailAddress(_settings.SenderEmail, _settings.SmtpUser),
                 Subject = subject,
                 Body = body,
-                IsBodyHtml = false,
+                IsBodyHtml = true,
             };
             
             mailMessage.To.Add(_settings.RecipientEmail);

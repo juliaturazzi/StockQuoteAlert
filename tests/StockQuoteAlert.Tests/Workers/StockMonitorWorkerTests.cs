@@ -6,12 +6,17 @@ using Microsoft.Extensions.Logging;
 
 namespace StockQuoteAlert.Tests.Workers;
 
-public class TestableStockMonitorWorker(
-    ILogger<StockMonitorWorker> logger,
-    IStockPriceService priceService,
-    StockConfiguration configuration,
-    IEmailService emailService) : StockMonitorWorker(logger, priceService, configuration, emailService)
+public class TestableStockMonitorWorker : StockMonitorWorker
 {
+    public TestableStockMonitorWorker(
+        ILogger<StockMonitorWorker> logger,
+        IStockPriceService priceService,
+        StockConfiguration configuration,
+        IEmailService emailService,
+        IMessageGeneratorService messageGenerator)
+        : base(logger, priceService, configuration, emailService, messageGenerator)
+    {
+    }
 
     public new Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -23,16 +28,26 @@ public class StockMonitorWorkerTests
 {
     private readonly Mock<IStockPriceService> _mockPriceService = new();
     private readonly Mock<IEmailService> _mockEmailService = new();
+    private readonly Mock<IMessageGeneratorService> _mockMessageGenerator = new();
     private readonly StockConfiguration _testConfig = new("APPL34", 12.00m, 10.00m); 
     private TestableStockMonitorWorker CreateWorker()
     {
         var logger = Mock.Of<ILogger<StockMonitorWorker>>();
-        
+
+        _mockMessageGenerator
+            .Setup(g => g.GenerateAlertMessage(
+                It.IsAny<string>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>()))
+            .Returns(("TEST SUBJECT", "TEST BODY"));
+
         return new TestableStockMonitorWorker(
             logger, 
             _mockPriceService.Object,
             _testConfig,
-            _mockEmailService.Object
+            _mockEmailService.Object,
+            _mockMessageGenerator.Object
         );
     }
     
@@ -59,7 +74,7 @@ public class StockMonitorWorkerTests
     [Fact]
     public async Task ExecuteAsync_PriceExceedsSellingPrice_ShouldSendSellAlertEmail()
     {
-        decimal sellingPriceHit = 12.50m;
+        decimal sellingPriceHit = 12.50m; 
         SetupPrice(sellingPriceHit); 
         SetupEmailService();         
         var worker = CreateWorker();
@@ -75,18 +90,29 @@ public class StockMonitorWorkerTests
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(
-                It.Is<string>(subject => subject.Contains("SELL")), 
+                It.IsAny<string>(), 
                 It.IsAny<string>()
             ),
             Times.Once,
             "Should send a SELL alert email."
+        );
+        
+        _mockMessageGenerator.Verify(
+            g => g.GenerateAlertMessage(
+                It.IsAny<string>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>()
+            ),
+            Times.Once,
+            "The message generator should be called to create the email body."
         );
     }
 
     [Fact]
     public async Task ExecuteAsync_PriceDropsBelowBuyingPrice_ShouldSendBuyAlertEmail()
     {
-        decimal buyingPriceHit = 9.50m;
+        decimal buyingPriceHit = 9.50m; 
         SetupPrice(buyingPriceHit); 
         SetupEmailService();         
         var worker = CreateWorker();
@@ -102,11 +128,22 @@ public class StockMonitorWorkerTests
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(
-                It.Is<string>(subject => subject.Contains("BUY")), 
+                It.IsAny<string>(),
                 It.IsAny<string>()
             ),
             Times.Once,
             "Should send a BUY alert email."
+        );
+        
+        _mockMessageGenerator.Verify(
+            g => g.GenerateAlertMessage(
+                It.IsAny<string>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>()
+            ),
+            Times.Once,
+            "The message generator should be called to create the email body."
         );
     }
 
@@ -133,7 +170,18 @@ public class StockMonitorWorkerTests
                 It.IsAny<string>()
             ),
             Times.Never,
-            "Should NOT send any email when price is within the defined range."
+            "Should NOT send an email when price is within the buying and selling range."
+        );
+        
+        _mockMessageGenerator.Verify(
+            g => g.GenerateAlertMessage(
+                It.IsAny<string>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>()
+            ),
+            Times.Never,
+            "The message generator should NOT be called when no alert is needed."
         );
     }
 
@@ -156,7 +204,18 @@ public class StockMonitorWorkerTests
         _mockEmailService.Verify(
             s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
             Times.Never,
-            "Should NOT send any email when price service returns null."
+            "Should NOT send an email if the price is null."
+        );
+        
+        _mockMessageGenerator.Verify(
+            g => g.GenerateAlertMessage(
+                It.IsAny<string>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>()
+            ),
+            Times.Never,
+            "Should NOT call the message generator if the price is null."
         );
     }
     
@@ -182,7 +241,18 @@ public class StockMonitorWorkerTests
         _mockEmailService.Verify(
             s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
             Times.Never,
-            "Should NOT send any email when price service throws an exception."
+            "Should NOT send an email if there is an exception."
+        );
+
+        _mockMessageGenerator.Verify(
+            g => g.GenerateAlertMessage(
+                It.IsAny<string>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>(), 
+                It.IsAny<decimal>()
+            ),
+            Times.Never,
+            "Should NOT call the message generator if there is an exception."
         );
     }
 }

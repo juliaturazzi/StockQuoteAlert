@@ -9,14 +9,16 @@ namespace StockQuoteAlert.Workers
         ILogger<StockMonitorWorker> logger,
         IStockPriceService priceService,
         StockConfiguration configuration,
-        IEmailService emailService) : BackgroundService
+        IEmailService emailService,
+        IMessageGeneratorService messageGenerator) : BackgroundService
     {
         private readonly ILogger<StockMonitorWorker> _logger = logger;
         private readonly IStockPriceService _priceService = priceService;
         private readonly StockConfiguration _configuration = configuration;
-    
-        private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(1);
         private readonly IEmailService _emailService = emailService;
+        private readonly IMessageGeneratorService _messageGenerator = messageGenerator;
+    
+        private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(1); 
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -44,28 +46,28 @@ namespace StockQuoteAlert.Workers
 
         private async Task ProcessPrice(decimal currentPrice)
         {
-            if (currentPrice > _configuration.SellingPrice)
-            {
-                _logger.LogWarning("SELL ALERT! The price of {Ticker} is {Price}, exceeding the target of {Target}", 
-                    _configuration.Ticker, currentPrice, _configuration.SellingPrice);
+            string ticker = _configuration.Ticker;
             
-                await _emailService.SendEmailAsync(
-                    subject: $"SELL {_configuration.Ticker} NOW!", 
-                    body: $"The price has risen to R$ {currentPrice}. The target was to sell above R$ {_configuration.SellingPrice}.");
+            if (currentPrice > _configuration.SellingPrice || currentPrice < _configuration.BuyingPrice)
+            {
+                (string subject, string body) = _messageGenerator.GenerateAlertMessage(
+                    ticker, 
+                    currentPrice, 
+                    _configuration.BuyingPrice, 
+                    _configuration.SellingPrice
+                );
 
+                if (!string.IsNullOrEmpty(subject))
+                {
+                    _logger.LogWarning("ALERT ACTIVATED! {Ticker} Price: {Price}", ticker, currentPrice);
+                    await _emailService.SendEmailAsync(subject, body);
+                }
             }
-            else if (currentPrice < _configuration.BuyingPrice)
-            {
-                _logger.LogWarning("BUY ALERT! The price of {Ticker} is {Price}, below the target of {Target}", 
-                    _configuration.Ticker, currentPrice, _configuration.BuyingPrice);
             
-                await _emailService.SendEmailAsync(
-                    subject: $"BUY {_configuration.Ticker} NOW!", 
-                    body: $"The price has dropped to R$ {currentPrice}. The target was to buy below R$ {_configuration.BuyingPrice}.");
-            }
             else
             {
-                _logger.LogInformation("Maintained: {Ticker} at R$ {Price}. (Neutral range)", _configuration.Ticker, currentPrice);
+                _logger.LogInformation("Maintained: {Ticker} at {Price}. (Neutral range {Buy} to {Sell})", 
+                    ticker, currentPrice, _configuration.BuyingPrice, _configuration.SellingPrice);
             }
         }
     }
