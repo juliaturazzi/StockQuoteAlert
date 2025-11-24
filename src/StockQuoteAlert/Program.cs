@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using StockQuoteAlert.Domain.Entities;
+using StockQuoteAlert.Domain.Interfaces;
+using StockQuoteAlert.Infrastructure.Services;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -32,6 +34,12 @@ try
 
     builder.Services.Configure<NotificationSettings>(
         builder.Configuration.GetSection("NotificationSettings"));
+
+    builder.Services.AddHttpClient<IStockPriceService, BrapiService>(client =>
+    {
+        client.BaseAddress = new Uri("https://brapi.dev/");
+        client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
+    });
 
     // builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
     // builder.Services.AddHttpClient<IStockPriceService, HgFinanceService>();
