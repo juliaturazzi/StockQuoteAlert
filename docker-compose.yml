@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.8' 
 
 services:
   stock-alert:
@@ -7,13 +7,22 @@ services:
       dockerfile: Dockerfile
     
     container_name: stock-monitor-app
+    
+    env_file:
+      - .env
 
     volumes:
       - ./logs:/app/logs
 
-    command: ["PETR4", "30.00", "20.00"]
+    command: ["${TICKER_TO_MONITOR:-PETR4}", "${PRICE_SELL_TARGET:-22.67}", "${PRICE_BUY_TARGET:-22.59}"]
 
     environment:
+      - EmailSettings__SmtpUser=${EMAIL_SMTP_USER}
+      - EmailSettings__SmtpPass=${EMAIL_SMTP_PASS}
+      - EmailSettings__SmtpServer=${EMAIL_SMTP_SERVER:-smtp.gmail.com}
+      - EmailSettings__SmtpPort=${EMAIL_SMTP_PORT:-587}
+      - EmailSettings__SenderEmail=${EMAIL_SMTP_SENDER}
+      - EmailSettings__RecipientEmail=${EMAIL_SMTP_RECIPIENT}
       - Serilog__MinimumLevel=Information
 
     restart: on-failure
