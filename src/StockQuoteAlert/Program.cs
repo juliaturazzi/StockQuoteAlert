@@ -35,7 +35,7 @@ try
         .ReadFrom.Configuration(builder.Configuration));
 
     builder.Services.Configure<NotificationSettings>(
-        builder.Configuration.GetSection("NotificationSettings"));
+        builder.Configuration.GetSection("EmailSettings"));
 
     var stockConfig = new StockConfiguration(assetTicker, sellingPrice, buyingPrice);
     builder.Services.AddSingleton(stockConfig);
@@ -45,6 +45,11 @@ try
         client.BaseAddress = new Uri("https://brapi.dev/");
         client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
     });
+
+    var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>() ?? throw new Exception("EmailSettings section is missing in configuration (appsettings.json).");
+
+    builder.Services.AddSingleton(emailSettings);
+    builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 
     builder.Services.AddHostedService<StockMonitorWorker>();
 
