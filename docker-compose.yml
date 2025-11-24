@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  stock-alert:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: stock-monitor-app
+
+    volumes:
+      - ./logs:/app/logs
+
+    command: ["PETR4", "30.00", "20.00"]
+
+    environment:
+      - Serilog__MinimumLevel=Information
+
+    restart: on-failure
