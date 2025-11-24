@@ -1,6 +1,7 @@
-namespace StockQuoteAlert.Domain.Interfaces;
-
-public interface IStockPriceService
+namespace StockQuoteAlert.Domain.Interfaces
 {
-    Task<decimal?> GetPriceAsync(string symbol);
+    public interface IStockPriceService
+    {
+        Task<decimal?> GetPriceAsync(string symbol);
+    }
 }

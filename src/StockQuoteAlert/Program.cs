@@ -5,6 +5,8 @@ using Serilog;
 using StockQuoteAlert.Domain.Entities;
 using StockQuoteAlert.Domain.Interfaces;
 using StockQuoteAlert.Infrastructure.Services;
+using StockQuoteAlert.Domain.Models;
+using StockQuoteAlert.Workers;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -35,24 +37,23 @@ try
     builder.Services.Configure<NotificationSettings>(
         builder.Configuration.GetSection("NotificationSettings"));
 
+    var stockConfig = new StockConfiguration(assetTicker, sellingPrice, buyingPrice);
+    builder.Services.AddSingleton(stockConfig);
+
     builder.Services.AddHttpClient<IStockPriceService, BrapiService>(client =>
     {
         client.BaseAddress = new Uri("https://brapi.dev/");
         client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
     });
 
-    // builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
-    // builder.Services.AddHttpClient<IStockPriceService, HgFinanceService>();
-
-    // builder.Services.AddHostedService<StockMonitorWorker>();
+    builder.Services.AddHostedService<StockMonitorWorker>();
 
     var host = builder.Build();
-
-    await host.RunAsync();
+    await host.RunAsync();    
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "Application start-up failed");
+    Log.Fatal(ex, "Application start-up failed.");
 }
 finally
 {
