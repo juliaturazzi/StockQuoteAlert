@@ -30,7 +30,7 @@ namespace StockQuoteAlert.Workers
                     var price = await _priceService.GetPriceAsync(_configuration.Ticker);
                     if (price.HasValue)
                     {
-                        ProcessPrice(price.Value);
+                        await ProcessPrice(price.Value); 
                     }
                 }
                 catch (Exception ex)
@@ -42,7 +42,7 @@ namespace StockQuoteAlert.Workers
             }
         }
 
-        private async void ProcessPrice(decimal currentPrice)
+        private async Task ProcessPrice(decimal currentPrice)
         {
             if (currentPrice > _configuration.SellingPrice)
             {
