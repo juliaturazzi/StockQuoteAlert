@@ -25,7 +25,7 @@ public class BrapiServiceTests
         }
     }
     
-    private BrapiService CreateBrapiService(HttpStatusCode statusCode, string content)
+    private static BrapiService CreateBrapiService(HttpStatusCode statusCode, string content)
     {
         var handler = new MockHttpMessageHandler(statusCode, content);
         var httpClient = new HttpClient(handler)

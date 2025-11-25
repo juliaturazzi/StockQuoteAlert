@@ -33,6 +33,7 @@ public static class TestHost
             ?? throw new Exception("The 'EmailSettings' section was not found or is invalid. Please check appsettings.json.");
 
         builder.Services.AddSingleton(emailSettings);
+        builder.Services.AddHostedService<StockMonitorWorker>();
         builder.Services.AddSingleton(Mock.Of<IEmailService>()); 
         
         builder.Services.AddHttpClient<IStockPriceService, BrapiService>(client =>

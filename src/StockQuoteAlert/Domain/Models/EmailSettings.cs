@@ -7,5 +7,7 @@ public class EmailSettings
     public int SmtpPort { get; set; }
     public required string SmtpUser { get; set; }
     public required string SmtpPass { get; set; }
-    public required string RecipientEmail { get; set; } 
+    public required string RecipientEmail { get; set; }
+    public int AlertCooldownSeconds { get; set; }
+    public bool IsAlertCooldownEnabled { get; set; }
 }

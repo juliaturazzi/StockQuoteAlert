@@ -21,6 +21,8 @@ services:
       - EmailSettings__SmtpPort=${EMAIL_SMTP_PORT:-587}
       - EmailSettings__SenderEmail=${EMAIL_SMTP_SENDER}
       - EmailSettings__RecipientEmail=${EMAIL_SMTP_RECIPIENT}
+      - EmailSettings__IsAlertCooldownEnabled=${EMAIL_ALERT_COOL_DOWN:-true}
+      - EmailSettings__AlertCooldownSeconds=${EMAIL_ALERT_COOL_DOWN_SECONDS:-300}
       - Serilog__MinimumLevel=Information
 
     restart: on-failure

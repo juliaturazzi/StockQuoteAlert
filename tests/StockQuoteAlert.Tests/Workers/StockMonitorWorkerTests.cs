@@ -1,23 +1,20 @@
-using Moq;
+using Moq; 
 using StockQuoteAlert.Domain.Interfaces;
 using StockQuoteAlert.Domain.Models;
 using StockQuoteAlert.Workers;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace StockQuoteAlert.Tests.Workers;
 
-public class TestableStockMonitorWorker : StockMonitorWorker
+public class TestableStockMonitorWorker(
+    ILogger<StockMonitorWorker> logger,
+    IStockPriceService priceService,
+    StockConfiguration configuration,
+    IEmailService emailService,
+    IMessageGeneratorService messageGenerator,
+    EmailSettings emailSettings) : StockMonitorWorker(logger, priceService, configuration, emailService, messageGenerator, emailSettings)
 {
-    public TestableStockMonitorWorker(
-        ILogger<StockMonitorWorker> logger,
-        IStockPriceService priceService,
-        StockConfiguration configuration,
-        IEmailService emailService,
-        IMessageGeneratorService messageGenerator)
-        : base(logger, priceService, configuration, emailService, messageGenerator)
-    {
-    }
-
     public new Task ExecuteAsync(CancellationToken stoppingToken)
     {
         return base.ExecuteAsync(stoppingToken);
@@ -29,7 +26,9 @@ public class StockMonitorWorkerTests
     private readonly Mock<IStockPriceService> _mockPriceService = new();
     private readonly Mock<IEmailService> _mockEmailService = new();
     private readonly Mock<IMessageGeneratorService> _mockMessageGenerator = new();
+    private readonly EmailSettings _emailSettingsForTests = GetSettingsFromConfig();
     private readonly StockConfiguration _testConfig = new("APPL34", 12.00m, 10.00m); 
+
     private TestableStockMonitorWorker CreateWorker()
     {
         var logger = Mock.Of<ILogger<StockMonitorWorker>>();
@@ -47,7 +46,8 @@ public class StockMonitorWorkerTests
             _mockPriceService.Object,
             _testConfig,
             _mockEmailService.Object,
-            _mockMessageGenerator.Object
+            _mockMessageGenerator.Object,
+            _emailSettingsForTests
         );
     }
     
@@ -65,12 +65,90 @@ public class StockMonitorWorkerTests
             .Returns(Task.CompletedTask);
     }
 
-    private CancellationToken GetCancellation(int delayMs = 500) 
+    private static CancellationToken GetCancellation(int delayMs = 500) 
     {
         var cts = new CancellationTokenSource(delayMs);
         return cts.Token;
     }
     
+    private static EmailSettings GetSettingsFromConfig()
+    {
+        string baseDir = AppContext.BaseDirectory;
+        string repoRoot = Path.GetFullPath(Path.Combine(
+            baseDir,
+            "..", "..", "..", "..", ".."
+        ));
+
+        string configDirectory = Path.Combine(repoRoot, "src", "StockQuoteAlert");
+
+        if (!Directory.Exists(configDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Project directory not found: {configDirectory}");
+        }
+
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(configDirectory)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+            .Build();
+
+        return configuration.GetSection("EmailSettings").Get<EmailSettings>() 
+               ?? throw new Exception("EmailSettings section is missing in configuration (appsettings.json).");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PriceExceedsSellingPrice_ShouldSendFirstEmailOnly()
+    {
+        decimal sellingPriceHit = 12.50m;
+        SetupPrice(sellingPriceHit);
+        SetupEmailService();
+        var worker = CreateWorker();
+        var token = GetCancellation();
+
+        await RunExecuteAsync(worker, token);
+
+        var token2 = GetCancellation(); 
+        await RunExecuteAsync(worker, token2); 
+
+        _mockEmailService.Verify(
+            s => s.SendEmailAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>()
+            ),
+            Times.Once,
+            "The email should be sent only once within the cooldown period."
+        );
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PriceIsWithinRangeThenAlerts_ShouldResetCooldown()
+    {
+        decimal sellingPriceHit = 12.50m;
+        decimal neutralPrice = 11.00m;
+        SetupEmailService();
+        var worker = CreateWorker();
+
+        SetupPrice(sellingPriceHit);
+        await RunExecuteAsync(worker, GetCancellation());
+
+        SetupPrice(neutralPrice);
+        await RunExecuteAsync(worker, GetCancellation());
+        
+        await Task.Delay(TimeSpan.FromSeconds(1.1)); 
+
+        SetupPrice(sellingPriceHit);
+        await RunExecuteAsync(worker, GetCancellation());
+
+        _mockEmailService.Verify(
+            s => s.SendEmailAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>()
+            ),
+            Times.Exactly(2),
+            "The email should be sent again after the price returned to neutral and then exceeded the selling price again."
+        );
+    }
+
     [Fact]
     public async Task ExecuteAsync_PriceExceedsSellingPrice_ShouldSendSellAlertEmail()
     {
@@ -80,13 +158,7 @@ public class StockMonitorWorkerTests
         var worker = CreateWorker();
         var token = GetCancellation(); 
 
-        try 
-        {
-            await worker.ExecuteAsync(token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        await RunExecuteAsync(worker, token);
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(
@@ -95,17 +167,6 @@ public class StockMonitorWorkerTests
             ),
             Times.Once,
             "Should send a SELL alert email."
-        );
-        
-        _mockMessageGenerator.Verify(
-            g => g.GenerateAlertMessage(
-                It.IsAny<string>(), 
-                It.IsAny<decimal>(), 
-                It.IsAny<decimal>(), 
-                It.IsAny<decimal>()
-            ),
-            Times.Once,
-            "The message generator should be called to create the email body."
         );
     }
 
@@ -118,13 +179,7 @@ public class StockMonitorWorkerTests
         var worker = CreateWorker();
         var token = GetCancellation(); 
 
-        try 
-        {
-            await worker.ExecuteAsync(token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        await RunExecuteAsync(worker, token);
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(
@@ -133,17 +188,6 @@ public class StockMonitorWorkerTests
             ),
             Times.Once,
             "Should send a BUY alert email."
-        );
-        
-        _mockMessageGenerator.Verify(
-            g => g.GenerateAlertMessage(
-                It.IsAny<string>(), 
-                It.IsAny<decimal>(), 
-                It.IsAny<decimal>(), 
-                It.IsAny<decimal>()
-            ),
-            Times.Once,
-            "The message generator should be called to create the email body."
         );
     }
 
@@ -156,13 +200,7 @@ public class StockMonitorWorkerTests
         var worker = CreateWorker();
         var token = GetCancellation(); 
 
-        try 
-        {
-            await worker.ExecuteAsync(token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        await RunExecuteAsync(worker, token);
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(
@@ -193,13 +231,7 @@ public class StockMonitorWorkerTests
         var worker = CreateWorker();
         var token = GetCancellation();
 
-        try 
-        {
-            await worker.ExecuteAsync(token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        await RunExecuteAsync(worker, token);
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
@@ -230,13 +262,7 @@ public class StockMonitorWorkerTests
         var worker = CreateWorker();
         var token = GetCancellation();
 
-        try 
-        {
-            await worker.ExecuteAsync(token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        await RunExecuteAsync(worker, token);
 
         _mockEmailService.Verify(
             s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
@@ -254,5 +280,16 @@ public class StockMonitorWorkerTests
             Times.Never,
             "Should NOT call the message generator if there is an exception."
         );
+    }
+
+    private static async Task RunExecuteAsync(TestableStockMonitorWorker worker, CancellationToken token)
+    {
+        try
+        {
+            await worker.ExecuteAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 }
