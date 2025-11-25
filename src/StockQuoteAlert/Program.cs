@@ -3,8 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using StockQuoteAlert.Domain.Interfaces;
-using StockQuoteAlert.Infrastructure.Services;
 using StockQuoteAlert.Domain.Models;
+using StockQuoteAlert.Infrastructure.Services;
 using StockQuoteAlert.Workers;
 
 Log.Logger = new LoggerConfiguration()
@@ -35,23 +35,43 @@ try
 
     var stockConfig = new StockConfiguration(assetTicker, sellingPrice, buyingPrice);
     builder.Services.AddSingleton(stockConfig);
-    
+
     builder.Services.AddSingleton<IMessageGeneratorService, EmailMessageGeneratorService>();
 
-    var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>() ?? throw new Exception("EmailSettings section is missing in configuration (appsettings.json).");
+    var emailSettings = builder.Configuration
+        .GetSection("EmailSettings")
+        .Get<EmailSettings>()
+        ?? throw new Exception("EmailSettings section is missing in configuration (appsettings.json).");
+
     builder.Services.AddSingleton(emailSettings);
     builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 
-    builder.Services.AddHttpClient<IStockPriceService, BrapiService>(client =>
+    var monitoringSettings = builder.Configuration
+        .GetSection("MonitoringSettings")
+        .Get<MonitoringSettings>()
+        ?? throw new Exception("MonitoringSettings section is missing in configuration (appsettings.json).");
+
+    if (string.IsNullOrWhiteSpace(monitoringSettings.ApiBaseUrl))
     {
-        client.BaseAddress = new Uri("https://brapi.dev/");
+        throw new Exception(
+            "MonitoringSettings:ApiBaseUrl is not configured. " +
+            "Set MonitoringSettings__ApiBaseUrl in environment or MonitoringSettings:ApiBaseUrl in appsettings.json.");
+    }
+
+    builder.Services.AddSingleton(monitoringSettings);
+
+    builder.Services.AddHttpClient<IStockPriceService, BrapiService>((sp, client) =>
+    {
+        var settings = sp.GetRequiredService<MonitoringSettings>();
+
+        client.BaseAddress = new Uri(settings.ApiBaseUrl!);
         client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
     });
 
     builder.Services.AddHostedService<StockMonitorWorker>();
 
     var host = builder.Build();
-    await host.RunAsync();    
+    await host.RunAsync();
 }
 catch (Exception ex)
 {

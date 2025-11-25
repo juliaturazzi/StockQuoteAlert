@@ -5,7 +5,8 @@ namespace StockQuoteAlert.Infrastructure.Services;
 
 public class EmailMessageGeneratorService : IMessageGeneratorService
 {
-    private static readonly CultureInfo UsCulture = new("en-US");
+    private static readonly CultureInfo BrCulture = new("pt-BR");
+
     public (string Subject, string Body) GenerateAlertMessage(
         string ticker,
         decimal currentPrice,
@@ -32,7 +33,7 @@ public class EmailMessageGeneratorService : IMessageGeneratorService
     {
         decimal difference = currentPrice - sellingPrice;
 
-        string subject = $"{ticker} hit your sell target at {currentPrice.ToString("C2", UsCulture)}";
+        string subject = $"{ticker} hit your sell target at {currentPrice.ToString("C2", BrCulture)}";
 
         string body = BuildAlertBody(
             alertType: "Sell",
@@ -55,7 +56,7 @@ public class EmailMessageGeneratorService : IMessageGeneratorService
     {
         decimal difference = buyingPrice - currentPrice;
 
-        string subject = $"{ticker} entered your buy zone at {currentPrice.ToString("C2", UsCulture)}";
+        string subject = $"{ticker} entered your buy zone at {currentPrice.ToString("C2", BrCulture)}";
 
         string body = BuildAlertBody(
             alertType: "Buy",
@@ -84,9 +85,9 @@ public class EmailMessageGeneratorService : IMessageGeneratorService
         string alertTypeUpper = alertType.ToUpperInvariant();
         string alertTypeLower = alertType.ToLowerInvariant();
 
-        string currentPriceFormatted = currentPrice.ToString("C2", UsCulture);
-        string targetPriceFormatted = targetPrice.ToString("C2", UsCulture);
-        string differenceFormatted = difference.ToString("C2", UsCulture);
+        string currentPriceFormatted = currentPrice.ToString("C2", BrCulture);
+        string targetPriceFormatted = targetPrice.ToString("C2", BrCulture);
+        string differenceFormatted = difference.ToString("C2", BrCulture);
 
         string body = $@"
         <html>

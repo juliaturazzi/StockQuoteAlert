@@ -5,7 +5,6 @@ using StockQuoteAlert.Domain.Interfaces;
 using StockQuoteAlert.Domain.Models;
 using StockQuoteAlert.Infrastructure.Services;
 using StockQuoteAlert.Workers;
-
 using Microsoft.Extensions.Configuration;
 
 namespace StockQuoteAlert.Tests.Workers;
@@ -29,16 +28,26 @@ public static class TestHost
         
         builder.Services.AddSingleton<IMessageGeneratorService, EmailMessageGeneratorService>();
 
-        var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>() 
+        var emailSettings = builder.Configuration
+            .GetSection("EmailSettings")
+            .Get<EmailSettings>() 
             ?? throw new Exception("The 'EmailSettings' section was not found or is invalid. Please check appsettings.json.");
 
         builder.Services.AddSingleton(emailSettings);
-        builder.Services.AddHostedService<StockMonitorWorker>();
+
         builder.Services.AddSingleton(Mock.Of<IEmailService>()); 
-        
+
+        var monitoringSettings = builder.Configuration
+            .GetSection("MonitoringSettings")
+            .Get<MonitoringSettings>()
+            ?? throw new Exception("The 'MonitoringSettings' section was not found or is invalid. Please check appsettings.json.");
+;
+
+        builder.Services.AddSingleton(monitoringSettings);
+
         builder.Services.AddHttpClient<IStockPriceService, BrapiService>(client =>
         {
-            client.BaseAddress = new Uri("https://brapi.dev/"); 
+            client.BaseAddress = new Uri(monitoringSettings.ApiBaseUrl);
             client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
         });
 
@@ -70,7 +79,7 @@ public class HostIntegrationTests
         Assert.Null(capturedException);
         Assert.NotNull(host);
         
-        var worker = host.Services.GetService<IHostedService>();
+        var worker = host!.Services.GetService<IHostedService>();
         
         Assert.NotNull(worker);
         Assert.IsType<StockMonitorWorker>(worker); 

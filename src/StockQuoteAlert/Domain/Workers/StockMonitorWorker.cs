@@ -11,7 +11,8 @@ namespace StockQuoteAlert.Workers
         StockConfiguration configuration,
         IEmailService emailService,
         IMessageGeneratorService messageGenerator,
-        EmailSettings emailSettings) : BackgroundService
+        EmailSettings emailSettings,
+        MonitoringSettings monitoringSettings) : BackgroundService
     {
         private readonly ILogger<StockMonitorWorker> _logger = logger;
         private readonly IStockPriceService _priceService = priceService;
@@ -19,7 +20,13 @@ namespace StockQuoteAlert.Workers
         private readonly IEmailService _emailService = emailService;
         private readonly IMessageGeneratorService _messageGenerator = messageGenerator;
         private readonly EmailSettings _emailSettings = emailSettings;
-        private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(1); 
+
+        private readonly TimeSpan _checkInterval =
+            TimeSpan.FromMinutes(
+                monitoringSettings.CheckIntervalMinutes <= 0
+                    ? 1
+                    : monitoringSettings.CheckIntervalMinutes);
+
         private readonly Dictionary<string, DateTimeOffset> _lastAlertSent = [];
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -131,7 +138,7 @@ namespace StockQuoteAlert.Workers
                 }
             }
 
-            
+
             return false;
         }
 

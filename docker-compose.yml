@@ -23,6 +23,8 @@ services:
       - EmailSettings__RecipientEmail=${EMAIL_SMTP_RECIPIENT}
       - EmailSettings__IsAlertCooldownEnabled=${EMAIL_ALERT_COOL_DOWN:-true}
       - EmailSettings__AlertCooldownSeconds=${EMAIL_ALERT_COOL_DOWN_SECONDS:-300}
+      - MonitoringSettings__ApiBaseUrl=${MONITORING_API_BASE_URL:-https://brapi.dev/}
+      - MonitoringSettings__CheckIntervalMinutes=${MONITORING_CHECK_INTERVAL_MINUTES:-1}
       - Serilog__MinimumLevel=Information
 
     restart: on-failure
