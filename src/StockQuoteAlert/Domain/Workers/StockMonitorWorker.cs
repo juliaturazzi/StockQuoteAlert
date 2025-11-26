@@ -20,12 +20,7 @@ namespace StockQuoteAlert.Workers
         private readonly IEmailService _emailService = emailService;
         private readonly IMessageGeneratorService _messageGenerator = messageGenerator;
         private readonly EmailSettings _emailSettings = emailSettings;
-
-        private readonly TimeSpan _checkInterval =
-            TimeSpan.FromMinutes(
-                monitoringSettings.CheckIntervalMinutes <= 0
-                    ? 1
-                    : monitoringSettings.CheckIntervalMinutes);
+        private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(monitoringSettings.CheckIntervalMinutes);
 
         private readonly Dictionary<string, DateTimeOffset> _lastAlertSent = [];
 
@@ -33,6 +28,8 @@ namespace StockQuoteAlert.Workers
         {
             _logger.LogInformation("Starting stock monitor for {Ticker} with buying price {BuyingPrice} and selling price {SellingPrice}",
                 _configuration.Ticker, _configuration.BuyingPrice, _configuration.SellingPrice);
+            
+            _logger.LogInformation("Check interval set to {Minutes} minutes.", _checkInterval.TotalMinutes);
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -41,7 +38,7 @@ namespace StockQuoteAlert.Workers
                     var price = await _priceService.GetPriceAsync(_configuration.Ticker);
                     if (price.HasValue)
                     {
-                        await ProcessPrice(price.Value);
+                        await ProcessPrice(price.Value); 
                     }
                 }
                 catch (Exception ex)
@@ -49,14 +46,7 @@ namespace StockQuoteAlert.Workers
                     _logger.LogError(ex, "Error occurred while monitoring stock price for {Ticker}", _configuration.Ticker);
                 }
 
-                try
-                {
-                    await Task.Delay(_checkInterval, stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                await Task.Delay(_checkInterval, stoppingToken);
             }
         }
 
@@ -65,102 +55,74 @@ namespace StockQuoteAlert.Workers
             string ticker = _configuration.Ticker;
             AlertAction action = AlertAction.None;
             
-            if (currentPrice > _configuration.SellingPrice)
-            {
-                action = AlertAction.Sell;
-            }
-            else if (currentPrice < _configuration.BuyingPrice)
-            {
-                action = AlertAction.Buy;
-            }
+            if (currentPrice > _configuration.SellingPrice) action = AlertAction.Sell;
+            else if (currentPrice < _configuration.BuyingPrice) action = AlertAction.Buy;
             
             if (action != AlertAction.None)
             {
                 if (IsOnCooldown(ticker, action))
                 {
-                    _logger.LogInformation(
-                        "Alert for {Ticker} ({Action}) suppressed due to cooldown.",
-                        ticker, action);
+                    _logger.LogInformation("Alert for {Ticker} ({Action}) suppressed due to cooldown.", ticker, action);
                     return;
                 }
                 
                 (string subject, string body) = _messageGenerator.GenerateAlertMessage(
-                    ticker, 
-                    currentPrice, 
-                    _configuration.BuyingPrice, 
-                    _configuration.SellingPrice
-                );
+                    ticker, currentPrice, _configuration.BuyingPrice, _configuration.SellingPrice);
 
-                if (!string.IsNullOrWhiteSpace(subject))
+                if (!string.IsNullOrEmpty(subject))
                 {
-                    _logger.LogWarning(
-                        "ALERT ACTIVATED! {Ticker} Price: {Price}. Sending email.",
-                        ticker, currentPrice);
+                    _logger.LogWarning(">>> ALERT ACTIVATED! {Ticker} Price: {Price:N2} ({Action}) <<<", ticker, currentPrice, action);
 
-                    await _emailService.SendEmailAsync(subject, body);
+                    if (_emailSettings.IsConfigured)
+                    {
+                        await _emailService.SendEmailAsync(subject, body);
+                        _logger.LogInformation("Email successfully sent to {Recipient}.", _emailSettings.RecipientEmail);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Email NOT sent: Email configuration is missing or incomplete.");
+                    }
+                    
                     UpdateLastAlertTime(ticker, action);
                 }
             }
             else
             {
-                ResetAlertsForTicker(ticker);
-
-                _logger.LogInformation(
-                    "Maintained: {Ticker} at {Price}. (Neutral range {Buy} to {Sell})", 
+                _logger.LogInformation("Maintained: {Ticker} at {Price:N2}. (Neutral range {Buy:N2} to {Sell:N2})", 
                     ticker, currentPrice, _configuration.BuyingPrice, _configuration.SellingPrice);
+
+                ResetCooldown(ticker);
             }
         }
         
         private enum AlertAction { None, Buy, Sell }
         
-        private static string GetAlertKey(string ticker, AlertAction action)
-        {
-            return $"{ticker}_{action.ToString().ToUpperInvariant()}";
-        }
+        private static string GetAlertKey(string ticker, AlertAction action) => $"{ticker}_{action.ToString().ToUpperInvariant()}";
         
         private bool IsOnCooldown(string ticker, AlertAction action)
         {
-            if (!_emailSettings.IsAlertCooldownEnabled)
-            {
-                return false;
-            }
+            if (!_emailSettings.IsAlertCooldownEnabled) return false;
             
             string key = GetAlertKey(ticker, action);
-            
             if (_lastAlertSent.TryGetValue(key, out DateTimeOffset lastSentTime))
             {
                 TimeSpan elapsed = DateTimeOffset.UtcNow - lastSentTime;
                 TimeSpan cooldownTime = TimeSpan.FromSeconds(_emailSettings.AlertCooldownSeconds);
-                
-                if (elapsed < cooldownTime)
-                {
-                    return true;
-                }
+                if (elapsed < cooldownTime) return true;
             }
-
-
             return false;
         }
 
         private void UpdateLastAlertTime(string ticker, AlertAction action)
         {
-            if (!_emailSettings.IsAlertCooldownEnabled)
-                return;
-
             string key = GetAlertKey(ticker, action);
             _lastAlertSent[key] = DateTimeOffset.UtcNow;
         }
 
-        private void ResetAlertsForTicker(string ticker)
+        private void ResetCooldown(string ticker)
         {
-            if (_lastAlertSent.Count == 0)
-                return;
-
-            string buyKey  = GetAlertKey(ticker, AlertAction.Buy);
-            string sellKey = GetAlertKey(ticker, AlertAction.Sell);
-
-            _lastAlertSent.Remove(buyKey);
-            _lastAlertSent.Remove(sellKey);
+            _lastAlertSent.Remove(GetAlertKey(ticker, AlertAction.Buy));
+            _lastAlertSent.Remove(GetAlertKey(ticker, AlertAction.Sell));
         }
     }
 }

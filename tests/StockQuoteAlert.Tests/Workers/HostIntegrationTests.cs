@@ -15,6 +15,15 @@ public static class TestHost
     {
         var builder = Host.CreateApplicationBuilder(args);
         
+        string assemblyLocation = typeof(HostIntegrationTests).Assembly.Location;
+        string assemblyDirectory = Path.GetDirectoryName(assemblyLocation) 
+            ?? throw new InvalidOperationException("Assembly directory not found.");
+        
+        string solutionRoot = Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "..", "..", "..", ".."));
+        string configPath = Path.Combine(solutionRoot, "src", "StockQuoteAlert", "appsettings.json");
+
+        builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: false);
+
         if (args.Length < 3)
         {
             throw new ArgumentException("Command line arguments (Ticker, Sell, Buy) are required for the Host test.");
@@ -31,23 +40,27 @@ public static class TestHost
         var emailSettings = builder.Configuration
             .GetSection("EmailSettings")
             .Get<EmailSettings>() 
-            ?? throw new Exception("The 'EmailSettings' section was not found or is invalid. Please check appsettings.json.");
+            ?? new EmailSettings();
 
         builder.Services.AddSingleton(emailSettings);
-
         builder.Services.AddSingleton(Mock.Of<IEmailService>()); 
 
         var monitoringSettings = builder.Configuration
             .GetSection("MonitoringSettings")
             .Get<MonitoringSettings>()
             ?? throw new Exception("The 'MonitoringSettings' section was not found or is invalid. Please check appsettings.json.");
-;
+
+        if (string.IsNullOrWhiteSpace(monitoringSettings.ApiBaseUrl))
+        {
+             throw new Exception("MonitoringSettings:ApiBaseUrl is not configured.");
+        }
 
         builder.Services.AddSingleton(monitoringSettings);
 
-        builder.Services.AddHttpClient<IStockPriceService, BrapiService>(client =>
+        builder.Services.AddHttpClient<IStockPriceService, BrapiService>((sp, client) =>
         {
-            client.BaseAddress = new Uri(monitoringSettings.ApiBaseUrl);
+            var settings = sp.GetRequiredService<MonitoringSettings>();
+            client.BaseAddress = new Uri(settings.ApiBaseUrl!);
             client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
         });
 
@@ -80,18 +93,20 @@ public class HostIntegrationTests
         Assert.NotNull(host);
         
         var worker = host!.Services.GetService<IHostedService>();
-        
         Assert.NotNull(worker);
         Assert.IsType<StockMonitorWorker>(worker); 
 
         var priceService = host.Services.GetService<IStockPriceService>();
         var emailGenerator = host.Services.GetService<IMessageGeneratorService>();
         var emailService = host.Services.GetService<IEmailService>();
+        var monSettings = host.Services.GetService<MonitoringSettings>();
         
         Assert.NotNull(priceService);
         Assert.NotNull(emailGenerator);
         Assert.NotNull(emailService);
+        Assert.NotNull(monSettings);
 
-        Assert.IsType<BrapiService>(priceService); 
+        Assert.IsType<BrapiService>(priceService);
+        Assert.False(string.IsNullOrWhiteSpace(monSettings.ApiBaseUrl)); 
     }
 }

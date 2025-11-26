@@ -12,19 +12,20 @@ services:
     volumes:
       - ./logs:/app/logs
 
-    command: ["${TICKER_TO_MONITOR:-PETR4}", "${PRICE_SELL_TARGET:-22.67}", "${PRICE_BUY_TARGET:-22.59}"]
+    command: ["${TICKER_TO_MONITOR}", "${PRICE_SELL_TARGET}", "${PRICE_BUY_TARGET}"]
 
     environment:
       - EmailSettings__SmtpUser=${EMAIL_SMTP_USER}
       - EmailSettings__SmtpPass=${EMAIL_SMTP_PASS}
-      - EmailSettings__SmtpServer=${EMAIL_SMTP_SERVER:-smtp.gmail.com}
-      - EmailSettings__SmtpPort=${EMAIL_SMTP_PORT:-587}
+      - EmailSettings__SmtpServer=${EMAIL_SMTP_SERVER}
+      - EmailSettings__SmtpPort=${EMAIL_SMTP_PORT}
       - EmailSettings__SenderEmail=${EMAIL_SMTP_SENDER}
       - EmailSettings__RecipientEmail=${EMAIL_SMTP_RECIPIENT}
       - EmailSettings__IsAlertCooldownEnabled=${EMAIL_ALERT_COOL_DOWN:-true}
       - EmailSettings__AlertCooldownSeconds=${EMAIL_ALERT_COOL_DOWN_SECONDS:-300}
       - MonitoringSettings__ApiBaseUrl=${MONITORING_API_BASE_URL:-https://brapi.dev/}
       - MonitoringSettings__CheckIntervalMinutes=${MONITORING_CHECK_INTERVAL_MINUTES:-1}
+      - MonitoringSettings__BrapiToken=${BRAPI_TOKEN}
       - Serilog__MinimumLevel=Information
 
     restart: on-failure

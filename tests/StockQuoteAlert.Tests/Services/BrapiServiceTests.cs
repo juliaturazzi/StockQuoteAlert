@@ -2,6 +2,7 @@ using Moq;
 using System.Net;
 using StockQuoteAlert.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
+using StockQuoteAlert.Domain.Models;
 
 namespace StockQuoteAlert.Tests.Services;
 
@@ -25,7 +26,7 @@ public class BrapiServiceTests
         }
     }
     
-    private static BrapiService CreateBrapiService(HttpStatusCode statusCode, string content)
+    private static BrapiService CreateBrapiService(HttpStatusCode statusCode, string content, string? token = "test-token-123")
     {
         var handler = new MockHttpMessageHandler(statusCode, content);
         var httpClient = new HttpClient(handler)
@@ -34,8 +35,13 @@ public class BrapiServiceTests
         };
 
         var logger = Mock.Of<ILogger<BrapiService>>();
+        var settings = new MonitoringSettings 
+        { 
+            ApiBaseUrl = "https://fake.brapi.dev/",
+            BrapiToken = token
+        };
 
-        return new BrapiService(httpClient, logger);
+        return new BrapiService(httpClient, logger, settings);
     }
 
     [Fact]
@@ -62,6 +68,26 @@ public class BrapiServiceTests
     {
         var service = CreateBrapiService(HttpStatusCode.InternalServerError, "Error");
         var price = await service.GetPriceAsync("SERVERDOWN");
+
+        Assert.False(price.HasValue);
+    }
+
+
+    [Fact]
+    public async Task GetPriceAsync_NoToken_FreeTicker_ReturnsPrice()
+    {
+        var service = CreateBrapiService(HttpStatusCode.OK, SuccessJson, token: null);
+        var price = await service.GetPriceAsync("MGLU3");
+
+        Assert.True(price.HasValue);
+        Assert.Equal(45.30m, price.Value);
+    }
+
+    [Fact]
+    public async Task GetPriceAsync_NoToken_RestrictedTicker_ReturnsNull()
+    {
+        var service = CreateBrapiService(HttpStatusCode.OK, SuccessJson, token: null);
+        var price = await service.GetPriceAsync("WEGE3");
 
         Assert.False(price.HasValue);
     }

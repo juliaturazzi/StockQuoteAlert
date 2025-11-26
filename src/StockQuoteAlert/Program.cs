@@ -15,15 +15,25 @@ try
 {
     Log.Information("Starting up Stock Quote Alert...");
 
-    if (args.Length < 3)
+    if (args.Length < 3 || args.Any(string.IsNullOrWhiteSpace))
     {
-        Log.Error("Incorrect number of arguments. Usage: StockQuoteAlert <ASSET_TICKER> <SELLING_PRICE> <BUYING_PRICE>");
+        Log.Fatal("===============================================================");
+        Log.Fatal("CRITICAL ERROR: Mandatory configuration missing!");
+        Log.Fatal("You must configure the following variables in your .env file:");
+        Log.Fatal(" - TICKER_TO_MONITOR (e.g., PETR4)");
+        Log.Fatal(" - PRICE_SELL_TARGET (e.g., 40.50)");
+        Log.Fatal(" - PRICE_BUY_TARGET  (e.g., 30.00)");
+        Log.Fatal("===============================================================");
         return;
     }
 
     var assetTicker = args[0];
-    var sellingPrice = decimal.Parse(args[1]);
-    var buyingPrice = decimal.Parse(args[2]);
+    
+    if (!decimal.TryParse(args[1], out var sellingPrice) || !decimal.TryParse(args[2], out var buyingPrice))
+    {
+        Log.Fatal("ERROR: Sell and Buy prices must be valid numbers (e.g., 22.50).");
+        return;
+    }
 
     Log.Information("Monitoring asset {AssetTicker} for selling price {SellingPrice} and buying price {BuyingPrice}",
         assetTicker, sellingPrice, buyingPrice);
@@ -38,10 +48,23 @@ try
 
     builder.Services.AddSingleton<IMessageGeneratorService, EmailMessageGeneratorService>();
 
-    var emailSettings = builder.Configuration
-        .GetSection("EmailSettings")
-        .Get<EmailSettings>()
-        ?? throw new Exception("EmailSettings section is missing in configuration (appsettings.json).");
+    var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>() 
+                        ?? new EmailSettings();
+
+    if (!emailSettings.IsConfigured)
+    {
+        Log.Warning("-----------------------------------------------------------------------");
+        Log.Warning("WARNING: Email configuration is incomplete.");
+        Log.Warning("Monitoring will continue, but alerts will be visual (LOGS) only.");
+        Log.Warning("To enable emails, please fill in EMAIL_SMTP_USER, EMAIL_SMTP_PASS,");
+        Log.Warning("EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SMTP_SENDER, and");
+        Log.Warning("EMAIL_SMTP_RECIPIENT in your .env file.");
+        Log.Warning("-----------------------------------------------------------------------");
+    }
+    else
+    {
+        Log.Information("Email settings configured correctly. Alerts will be sent to {Recipient}.", emailSettings.RecipientEmail);
+    }
 
     builder.Services.AddSingleton(emailSettings);
     builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
@@ -53,9 +76,7 @@ try
 
     if (string.IsNullOrWhiteSpace(monitoringSettings.ApiBaseUrl))
     {
-        throw new Exception(
-            "MonitoringSettings:ApiBaseUrl is not configured. " +
-            "Set MonitoringSettings__ApiBaseUrl in environment or MonitoringSettings:ApiBaseUrl in appsettings.json.");
+        throw new Exception("MonitoringSettings:ApiBaseUrl is not configured.");
     }
 
     builder.Services.AddSingleton(monitoringSettings);
@@ -63,7 +84,6 @@ try
     builder.Services.AddHttpClient<IStockPriceService, BrapiService>((sp, client) =>
     {
         var settings = sp.GetRequiredService<MonitoringSettings>();
-
         client.BaseAddress = new Uri(settings.ApiBaseUrl!);
         client.DefaultRequestHeaders.Add("User-Agent", "StockQuoteAlert-App");
     });
@@ -75,7 +95,7 @@ try
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "Application start-up failed.");
+    Log.Fatal(ex, "Application start-up failed unexpectedly.");
 }
 finally
 {
