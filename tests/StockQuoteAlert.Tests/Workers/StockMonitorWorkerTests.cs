@@ -92,7 +92,7 @@ public class StockMonitorWorkerTests
     {
         var configuration = BuildConfiguration();
         return configuration.GetSection("EmailSettings").Get<EmailSettings>() 
-               ?? throw new Exception("Failed to read EmailSettings from configuration.");
+               ?? throw new Exception("EmailSettings section is missing in configuration (appsettings.json).");
     }
 
     private static MonitoringSettings GetMonitoringSettingsFromConfig()
@@ -111,23 +111,47 @@ public class StockMonitorWorkerTests
     }
     
     [Fact]
-    public async Task ExecuteAsync_PriceExceedsSellingPrice_ShouldSendSellAlertEmail()
+    public async Task ExecuteAsync_PriceExceedsSellingPrice_ShouldSendFirstEmailOnly()
     {
-        decimal sellingPriceHit = 12.50m; 
-        SetupPrice(sellingPriceHit); 
-        SetupEmailService();         
+        decimal sellingPriceHit = 12.50m;
+        SetupPrice(sellingPriceHit);
+        SetupEmailService();
         var worker = CreateWorker();
-        var token = GetCancellation(); 
+        
+        await RunExecuteAsync(worker, GetCancellation());
 
-        await RunExecuteAsync(worker, token);
+        await RunExecuteAsync(worker, GetCancellation());
 
         _mockEmailService.Verify(
-            s => s.SendEmailAsync(
-                It.IsAny<string>(), 
-                It.IsAny<string>()
-            ),
+            s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
             Times.Once,
-            "Should send a SELL alert email."
+            "Only the first alert email should be sent when the price exceeds the selling threshold."
+        );
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PriceIsWithinRangeThenAlerts_ShouldResetCooldown()
+    {
+        decimal sellingPriceHit = 12.50m;
+        decimal neutralPrice = 11.00m;
+        SetupEmailService();
+        var worker = CreateWorker();
+
+        SetupPrice(sellingPriceHit);
+        await RunExecuteAsync(worker, GetCancellation());
+
+        SetupPrice(neutralPrice);
+        await RunExecuteAsync(worker, GetCancellation());
+        
+        await Task.Delay(100); 
+
+        SetupPrice(sellingPriceHit);
+        await RunExecuteAsync(worker, GetCancellation());
+
+        _mockEmailService.Verify(
+            s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
+            Times.Exactly(2),
+            "Should send two SELL alert emails after price resets from neutral range."
         );
     }
 
@@ -206,51 +230,7 @@ public class StockMonitorWorkerTests
         _mockEmailService.Verify(
             s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
             Times.Never,
-            "Should NOT send email if price service throws exception."
-        );
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_PriceExceedsSellingPrice_ShouldSendFirstEmailOnly()
-    {
-        decimal sellingPriceHit = 12.50m;
-        SetupPrice(sellingPriceHit);
-        SetupEmailService();
-        var worker = CreateWorker();
-        
-        await RunExecuteAsync(worker, GetCancellation());
-        await RunExecuteAsync(worker, GetCancellation());
-
-        _mockEmailService.Verify(
-            s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
-            Times.Once,
-            "Just one email should be sent during the cooldown period."
-        );
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_PriceIsWithinRangeThenAlerts_ShouldResetCooldown()
-    {
-        decimal sellingPriceHit = 12.50m;
-        decimal neutralPrice = 11.00m;
-        SetupEmailService();
-        var worker = CreateWorker();
-
-        SetupPrice(sellingPriceHit);
-        await RunExecuteAsync(worker, GetCancellation());
-
-        SetupPrice(neutralPrice);
-        await RunExecuteAsync(worker, GetCancellation());
-        
-        await Task.Delay(100); 
-
-        SetupPrice(sellingPriceHit);
-        await RunExecuteAsync(worker, GetCancellation());
-
-        _mockEmailService.Verify(
-            s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
-            Times.Exactly(2),
-            "The second alert should be sent after price returns to neutral."
+            "Should NOT send email if price service throws an exception."
         );
     }
 
@@ -279,7 +259,7 @@ public class StockMonitorWorkerTests
         _mockEmailService.Verify(
             s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>()),
             Times.Never,
-            "The email should not be sent with invalid email settings."
+            "Should NOT send email with invalid email settings."
         );
     }
 

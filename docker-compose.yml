@@ -12,7 +12,7 @@ services:
     volumes:
       - ./logs:/app/logs
 
-    command: ["${TICKER_TO_MONITOR}", "${PRICE_SELL_TARGET}", "${PRICE_BUY_TARGET}"]
+    command: ["${TICKER_TO_MONITOR:-}", "${PRICE_SELL_TARGET:-}", "${PRICE_BUY_TARGET:-}"]
 
     environment:
       - EmailSettings__SmtpUser=${EMAIL_SMTP_USER}
